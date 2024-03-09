@@ -72,7 +72,7 @@ class Guidance(nn.Module):
             model_key,
             torch_dtype=torch.float16,
         )
-        self.video_pipe = self.video_pipe.to("cuda")
+        self.video_pipe = nn.DataParallel(self.video_pipe).to("cuda").module
         self.video_pipe.scheduler = DDIMScheduler.from_config(self.video_pipe.scheduler.config)
         self.video_pipe.scheduler.set_timesteps(config["n_timesteps"], device="cuda")
 
