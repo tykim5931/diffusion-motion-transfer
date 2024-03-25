@@ -1,10 +1,11 @@
 device: 'cuda'
 seed: null
-output_path: '/mnt/nas4/taeyeon/dmt/results/locomotive_bird_wo'
-data_path: 'data/locomotive'
-latents_path: 'data/locomotive/ddim_latents'
-source_prompt: "Amazing quality, masterpiece, A locomotive rides in a forest"
-target_prompt: "Amazing quality, masterpiece, A bird flying in a forest"
+output_path: '/mnt/nas4/taeyeon/dmt/results/tennis/still'
+data_path: '/mnt/nas4/taeyeon/datasets/davis/480p/tennis_short'
+latents_path: '/mnt/nas4/taeyeon/datasets/davis/480p/tennis_short/ddim_latent'
+target_latents_path: '/mnt/nas4/taeyeon/datasets/davis/480p/tennis_short/still/ddim_latent'
+source_prompt: "Amazing quality, masterpiece, A man playing tennis"
+target_prompt: ""
 negative_prompt: "bad quality, distortions, unrealistic, distorted image, watermark, signature"
 guidance_scale: 10
 

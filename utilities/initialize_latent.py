@@ -5,13 +5,25 @@ from diffusers.pipelines.text_to_video_synthesis.pipeline_text_to_video_synth_im
 from einops import rearrange
 import torch.nn.functional as F
 
-
 def load_source_latents_t(t, latents_path):
     latents_t_path = os.path.join(latents_path, f"noisy_latents_{t}.pt")
     assert os.path.exists(latents_t_path), f"Missing latents at t {t} path {latents_t_path}"
     latents = torch.load(latents_t_path).float()
     return latents
 
+def load_noisy_target_latents(model, latents_path):
+    config = model.config
+    device = config["device"]
+    noisest = max(
+        [
+            int(x.split("_")[-1].split(".")[0])
+            for x in glob.glob(os.path.join(latents_path, f"noisy_latents_*.pt"))
+        ]
+    )
+    latents_path = os.path.join(latents_path, f"noisy_latents_{noisest}.pt")
+    noisy_latent = torch.load(latents_path).float().to(device)
+    noisy_latent = noisy_latent[:, :, : config["max_frames"]]
+    return noisy_latent
 
 def initialize_noisy_latent(model, video_for_latents):
     config = model.config

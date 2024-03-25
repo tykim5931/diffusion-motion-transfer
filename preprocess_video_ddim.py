@@ -138,15 +138,24 @@ class Preprocess(nn.Module):
         self.scheduler.set_timesteps(num_steps)
 
         cond = self.get_text_embeds(inversion_prompt, negative_prompt)[[0]]
-        if data_path.endswith(".mp4"):
-            video = read_video(data_path, pts_unit="sec")[0].permute(0, 3, 1, 2).cuda() / 255
-            video = [ToPILImage()(video[i]).resize(self.resolution) for i in range(video.shape[0])]
-        else:
-            images = list(Path(data_path).glob("*.png")) + list(Path(data_path).glob("*.jpg"))
-            images = sorted(images, key=lambda x: int(x.stem))
+        still=True
+        if still==True:
+            f_cnt = len(list(Path(data_path).glob("*.png")) + list(Path(data_path).glob("*.jpg")))
+            images = list(Path(data_path).glob("00000.png")) + list(Path(data_path).glob("00000.jpg"))
+            images = images*f_cnt
+            assert len(images) == f_cnt
             video = [Image.open(img).resize(self.resolution) for img in images]
+        else: 
+            if data_path.endswith(".mp4"):
+                video = read_video(data_path, pts_unit="sec")[0].permute(0, 3, 1, 2).cuda() / 255
+                video = [ToPILImage()(video[i]).resize(self.resolution) for i in range(video.shape[0])]
+            else:
+                images = list(Path(data_path).glob("*.png")) + list(Path(data_path).glob("*.jpg"))
+                images = sorted(images, key=lambda x: int(x.stem))
+                video = [Image.open(img).resize(self.resolution) for img in images]
 
         video = video[: self.config["max_number_of_frames"]]
+        video_array = [np.array(img) for img in video]
         save_video([np.array(img) for img in video], str(Path(save_path) / f"original.mp4"))
 
         video = preprocess_video(video)

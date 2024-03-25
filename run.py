@@ -26,6 +26,7 @@ from utilities.guidance_utils import (
 from utilities.initialize_latent import (
     initialize_noisy_latent,
     load_source_latents_t,
+    load_noisy_target_latents,
 )
 from utilities.utils import (
     isinstance_str,
@@ -35,6 +36,19 @@ from utilities.utils import (
 # suppress partial model loading warning
 logging.set_verbosity_error()
 
+class DataParallelWrapper(torch.nn.DataParallel):
+    """
+    A wrapper for torch.nn.DataParallel to access attributes and methods of the model directly.
+    """
+    def __getattr__(self, name):
+        try:
+            # Try to get attribute from the super class (DataParallel)
+            return super().__getattr__(name)
+        except AttributeError:
+            # If failed, try to get attribute from the module (the actual model)
+            return getattr(self.module, name)
+
+            
 
 class MyIdentityUnsqueeze(torch.nn.Module):
     def __init__(self):
@@ -72,7 +86,7 @@ class Guidance(nn.Module):
             model_key,
             torch_dtype=torch.float16,
         )
-        self.video_pipe = nn.DataParallel(self.video_pipe).to("cuda").module
+        self.video_pipe = self.video_pipe.to("cuda")
         self.video_pipe.scheduler = DDIMScheduler.from_config(self.video_pipe.scheduler.config)
         self.video_pipe.scheduler.set_timesteps(config["n_timesteps"], device="cuda")
 
@@ -87,6 +101,16 @@ class Guidance(nn.Module):
         self.tokenizer = self.video_pipe.tokenizer
         self.text_encoder = self.video_pipe.text_encoder
         self.unet = self.video_pipe.unet
+
+        torch.cuda.empty_cache()
+        for param in self.unet.parameters():
+            param.requires_grad = False
+        for param in self.vae.parameters():
+            param.requires_grad = False
+        for param in self.text_encoder.parameters():
+            param.requires_grad = False
+        # self.unet = DataParallelWrapper(self.unet)
+
         self.scheduler = copy.deepcopy(self.video_pipe.scheduler)
         print("video model loaded")
 
@@ -128,7 +152,6 @@ class Guidance(nn.Module):
             for t in self.scheduler.timesteps
         }
 
-
     # Copied from diffusers.pipelines.text_to_video_synthesis.pipeline_text_to_video_synth.TextToVideoSDPipeline.decode_latents
     @torch.no_grad()
     def decode_latents(self, latents):
@@ -163,15 +186,18 @@ class Guidance(nn.Module):
         video = torch.stack([ToTensor()(Image.open(img).resize(self.resolution)) for img in images]).cuda()
         video = video[: self.config["max_frames"]]
 
-        # prepare noisy latent
-        if self.config["seed"] is None:
-            seed = torch.randint(0, 1000000, (1,)).item()
-            self.config["seed"] = seed
-            with open(Path(self.config["output_path"], "seed.txt"), "w") as f:
-                f.write(str(seed))
-
-        video_for_latents = [np.array(Image.open(img).resize(self.resolution)) for img in images]
-        noisy_latent = initialize_noisy_latent(self, video_for_latents)
+        if self.config["target_latents_path"]:
+            noisy_latent = load_noisy_target_latents(self, self.config["target_latents_path"])
+            print("Target latent loaded")
+        else: 
+            # prepare noisy latent
+            if self.config["seed"] is None:
+                seed = torch.randint(0, 1000000, (1,)).item()
+                self.config["seed"] = seed
+                with open(Path(self.config["output_path"], "seed.txt"), "w") as f:
+                    f.write(str(seed))
+            video_for_latents = [np.array(Image.open(img).resize(self.resolution)) for img in images]
+            noisy_latent = initialize_noisy_latent(self, video_for_latents)
 
         return (
             video,
@@ -324,6 +350,7 @@ class Guidance(nn.Module):
             register_time(self, t.item())
 
             if t in self.guidance_schedule:
+                print("guidance_step")
                 x = self.guidance_step(x, i, t)
             x = self.denoise_step(x, t)
             if self.config["restart_sampling"] and t != self.scheduler.timesteps[-1]:
